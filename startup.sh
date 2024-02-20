@@ -1,5 +1,19 @@
-#!/bin/sh
+#!/bin/bash
 echo "Welcome to GeoServer $GEOSERVER_VERSION"
+
+# function that can be used to copy a custom config file to the catalina conf dir
+function copy_custom_config() {
+  CONFIG_FILE=$1
+  # Use a custom "${CONFIG_FILE}" if the user mounted one into the container
+  if [ -d "${CONFIG_OVERRIDES_DIR}" ] && [ -f "${CONFIG_OVERRIDES_DIR}/${CONFIG_FILE}" ]; then
+    echo "Installing configuration override for ${CONFIG_FILE} with substituted environment variables"
+    envsubst < "${CONFIG_OVERRIDES_DIR}"/"${CONFIG_FILE}" > "${CATALINA_HOME}/conf/${CONFIG_FILE}"
+  else
+    # Otherwise use the default
+    echo "Installing default ${CONFIG_FILE} with substituted environment variables"
+    envsubst < "${CONFIG_DIR}"/"${CONFIG_FILE}" > "${CATALINA_HOME}/conf/${CONFIG_FILE}"
+  fi
+}
 
 ## Skip demo data
 if [ "${SKIP_DEMO_DATA}" = "true" ]; then
@@ -90,5 +104,42 @@ if [ "${CORS_ENABLED}" = "true" ]; then
   fi
 fi
 
+if [ "${POSTGRES_JNDI_ENABLED}" = "true" ]; then
+
+  # Set up some default values
+  if [ -z "${POSTGRES_JNDI_RESOURCE_NAME}" ]; then
+    export POSTGRES_JNDI_RESOURCE_NAME="jdbc/postgres"
+  fi
+  if [ -z "${POSTGRES_PORT}" ]; then
+    export POSTGRES_PORT="5432"
+  fi
+
+  # Use a custom "context.xml" if the user mounted one into the container
+  copy_custom_config context.xml
+fi
+
+# Use a custom "server.xml" if the user mounted one into the container
+copy_custom_config server.xml
+
+# Use a custom "web.xml" if the user mounted one into the container
+if [ -d "${CONFIG_OVERRIDES_DIR}" ] && [ -f "${CONFIG_OVERRIDES_DIR}/web.xml" ]; then
+  echo "Installing configuration override for web.xml with substituted environment variables"
+  
+  if [ "${CORS_ENABLED}" = "true" ]; then 
+    echo "Warning: the CORS_ENABLED's changes will be overwritten!"
+  fi
+  
+  envsubst < "${CONFIG_OVERRIDES_DIR}"/web.xml > "${CATALINA_HOME}/webapps/geoserver/WEB-INF/web.xml"
+fi
+
 # start the tomcat
-exec $CATALINA_HOME/bin/catalina.sh run
+# CIS - Tomcat Benchmark recommendations:
+# * Turn off session facade recycling
+# * Set a nondeterministic Shutdown command value
+if [ ! "${ENABLE_DEFAULT_SHUTDOWN}" = "true" ]; then
+  REPLACEMENT="$(echo $RANDOM | md5sum | head -c 10)"
+  sed -i 's/SHUTDOWN/'"$REPLACEMENT"'/g' "$CATALINA_HOME/conf/server.xml"
+  REPLACEMENT=
+fi
+
+exec $CATALINA_HOME/bin/catalina.sh run -Dorg.apache.catalina.connector.RECYCLE_FACADES=true
