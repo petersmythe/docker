@@ -3,13 +3,13 @@
 # error out if any statements fail
 set -e
 
-MAIN="2.25"
+MAIN="2.26"
 
 function usage() {
   echo "$0 <mode> <version> [<build>]"
   echo ""
   echo " mode : The mode. Choose one of 'build', 'publish' or 'buildandpublish'"
-  echo " version : The released version to build an docker image for (eg: 2.24.1, ${MAIN}-SNAPSHOT, ${MAIN}-RC)"
+  echo " version : The released version to build an docker image for (eg: 2.25.2, ${MAIN}-SNAPSHOT, ${MAIN}-RC)"
   echo " build : Build number (optional)"
 }
 
@@ -26,24 +26,26 @@ else
   BUILD=$3
 fi
 
-if [[ "$VERSION" == *"-RC"* ]]; then
+if [[ "$VERSION" == *"-M"* ]]; then
     # release candidate branch release
-    BRANCH="${VERSION:0:4}-RC"
+    BRANCH="${VERSION}"
     TAG=geoserver-docker.osgeo.org/geoserver:$BRANCH
+elif [[ "$VERSION" == *"-RC"* ]]; then
+    # release candidate branch release
+    BRANCH="${VERSION}"
+    TAG=geoserver-docker.osgeo.org/geoserver:$BRANCH
+elif [[ "${VERSION:0:4}" == "$MAIN" ]]; then
+  # main branch snapshot release
+  BRANCH=main
+  TAG=geoserver-docker.osgeo.org/geoserver:$MAIN.x
 else
-  if [[ "${VERSION:0:4}" == "$MAIN" ]]; then
-    # main branch snapshot release
-    BRANCH=main
-    TAG=geoserver-docker.osgeo.org/geoserver:$MAIN.x
+  if [[ "$VERSION" == *"-SNAPSHOT"* ]]; then
+  # stable or maintenance branch snapshot release
+  BRANCH="${VERSION:0:4}.x"
+  TAG=geoserver-docker.osgeo.org/geoserver:$BRANCH
   else
-    if [[ "$VERSION" == *"-SNAPSHOT"* ]]; then
-    # stable or maintenance branch snapshot release
-    BRANCH="${VERSION:0:4}.x"
-    TAG=geoserver-docker.osgeo.org/geoserver:$BRANCH
-    else
-    BRANCH="${VERSION:0:4}.x"
-    TAG=geoserver-docker.osgeo.org/geoserver:$VERSION
-    fi
+  BRANCH="${VERSION:0:4}.x"
+  TAG=geoserver-docker.osgeo.org/geoserver:$VERSION
   fi
 fi
 

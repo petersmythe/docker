@@ -4,7 +4,7 @@ services:
     build:
       context: .
       args:
-        - GEOSERVER_VERSION=2.24.1
+        - GEOSERVER_VERSION=2.25.2
         - CORS_ENABLED=true
         - CORS_ALLOWED_METHODS=GET,POST,PUT,HEAD,OPTIONS
     ports:
@@ -29,7 +29,7 @@ services:
       retries: 3
       timeout: 20s
   postgis:
-    image: postgis/postgis:16-3.4-alpine
+    image: postgis/postgis:16-3.4-alpine@sha256:f785413fbe19835b9fd7db0ec3bcb215de2b4f87ffaaadd01e2e8f44d9cefbf1
     ports:
       - "5555:5432"
     environment:
