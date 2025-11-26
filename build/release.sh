@@ -3,7 +3,7 @@
 # error out if any statements fail
 set -e
 
-MAIN="2.28"
+MAIN="2.29"
 
 function usage() {
   echo "$0 <mode> <version> [<build>]"
@@ -25,22 +25,26 @@ function build_geoserver_image() {
         # all needed vars are set
 
         (set -x # echo docker build command
-        docker build \
+        docker buildx build \
+			--platform linux/arm64 \
             --build-arg WAR_ZIP_URL="https://build.geoserver.org/geoserver/$BRANCH/geoserver-$BRANCH-latest-war.zip" \
             --build-arg STABLE_PLUGIN_URL="https://build.geoserver.org/geoserver/$BRANCH/ext-latest" \
             --build-arg COMMUNITY_PLUGIN_URL="https://build.geoserver.org/geoserver/$BRANCH/community-latest" \
             --build-arg GS_VERSION="$VERSION" \
             --build-arg GS_BUILD="$BUILD" \
             --build-arg BUILD_GDAL="$BUILD_GDAL" \
+		    --load \
             -t "$TAG" .)
       elif [ -z "$BRANCH" ]; then
         # BRANCH is not set
 
         (set -x # echo docker build command
-        docker build \
+        docker buildx build \
+		  --platform linux/arm64 \
           --build-arg GS_VERSION=$VERSION \
           --build-arg GS_BUILD=$BUILD \
           --build-arg BUILD_GDAL=$BUILD_GDAL \
+		  --load \
           -t $TAG .)
       fi
 
@@ -63,7 +67,7 @@ else
   BUILD=$3
 fi
 
-BASE=geoserver-docker.osgeo.org/geoserver
+BASE=petersmythe/geoserver
 GDAL_SUFFIX=gdal
 
 echo "Building GeoServer Docker Image for version $VERSION"
@@ -85,44 +89,47 @@ elif [[ "${VERSION:0:4}" == "$MAIN" ]]; then
   GDAL_TAG=$TAG-$GDAL_SUFFIX
 else
   if [[ "$VERSION" == *"-SNAPSHOT"* ]]; then
-  # stable or maintenance branch snapshot release
-  BRANCH="${VERSION:0:4}.x"
-  TAG=$BASE:$BRANCH
-  GDAL_TAG=$TAG-$GDAL_SUFFIX
+    # stable or maintenance branch snapshot release
+    BRANCH="${VERSION:0:4}.x"
+    TAG=$BASE:$BRANCH
+    GDAL_TAG=$TAG-$GDAL_SUFFIX
   else
-  BRANCH="${VERSION:0:4}.x"
-  TAG=$BASE:$VERSION
-  GDAL_TAG=$TAG-$GDAL_SUFFIX
+    BRANCH="${VERSION:0:4}.x"
+    TAG=$BASE:$VERSION
+    GDAL_TAG=$TAG-$GDAL_SUFFIX
   fi
 fi
 
-# Prerequisite for Multi-Arch via QEM
-# docker run --privileged --rm tonistiigi/binfmt --install all
+# Set up buildx builder for Multi-Arch builds:
+docker buildx stop multiarch-builder 2>/dev/null || true
+docker buildx rm multiarch-builder 2>/dev/null || true
+docker buildx create --name multiarch-builder --use
+docker buildx inspect --bootstrap
 
 echo "Release from branch $BRANCH GeoServer $VERSION as $TAG"
-echo "Release from branch $BRANCH GeoServer $VERSION (with GDAL) as $GDAL_TAG"
+#echo "Release from branch $BRANCH GeoServer $VERSION (with GDAL) as $GDAL_TAG"
 
 # Go up one level to the Dockerfile
 cd ".."
 
-if [[ $1 == *build* ]]; then
+if [[ "$1" == *build* ]]; then
   echo "Building GeoServer Docker Image..."
   if [[ "$VERSION" == *"-SNAPSHOT"* ]]; then
     echo "  nightly build from https://build.geoserver.org/geoserver/$BRANCH"
     echo
     build_geoserver_image $VERSION $BUILD "false" $TAG $BRANCH     # without gdal
-    build_geoserver_image $VERSION $BUILD "true" $GDAL_TAG $BRANCH # with gdal
+#    build_geoserver_image $VERSION $BUILD "true" $GDAL_TAG $BRANCH # with gdal
   else
     build_geoserver_image $VERSION $BUILD "false" $TAG   # without gdal
-    build_geoserver_image $VERSION $BUILD "true" $GDAL_TAG # with gdal
+#    build_geoserver_image $VERSION $BUILD "true" $GDAL_TAG # with gdal
   fi
 fi
 
-if [[ $1 == *"publish"* ]]; then
+if [[ "$1" == *"publish"* ]]; then
   echo "Publishing GeoServer Docker Images..."
   echo $DOCKERPASSWORD | docker login -u $DOCKERUSER --password-stdin geoserver-docker.osgeo.org
   echo "docker push $TAG"
   docker push $TAG
-  echo "docker push $GDAL_TAG"
-  docker push $GDAL_TAG
+#  echo "docker push $GDAL_TAG"
+#  docker push $GDAL_TAG
 fi
