@@ -53,6 +53,7 @@ else
   BUILD=$3
 fi
 
+#BASE=geoserver-docker.osgeo.org/geoserver
 BASE=petersmythe/geoserver
 GDAL_SUFFIX=gdal
 PLATFORMS=${PLATFORMS:-linux/amd64,linux/arm64}
@@ -87,21 +88,18 @@ else
   fi
 fi
 
-# Set up buildx builder for Multi-Arch builds:
-docker buildx stop multiarch-builder 2>/dev/null || true
-docker buildx rm multiarch-builder 2>/dev/null || true
-docker buildx create --name multiarch-builder --use
+# Ensure buildx builder is available for multi-arch builds
+docker buildx inspect multiarch-builder >/dev/null 2>&1 || docker buildx create --name multiarch-builder --use
 docker buildx inspect --bootstrap
 
 echo "Release from branch $BRANCH GeoServer $VERSION as $TAG"
 #echo "Release from branch $BRANCH GeoServer $VERSION (with GDAL) as $GDAL_TAG"
 
-# Go to repository root (relative to the script) to find the Dockerfile
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR/.."
+# Go up one level to the Dockerfile
+cd ".."
 
 if [[ "$1" == *build* ]]; then
-  echo "Building & publishing GeoServer Docker Image (multi-arch: $PLATFORMS)..."
+  echo "Building GeoServer Docker Image (multi-arch: $PLATFORMS)..."
   if [[ "$VERSION" == *"-SNAPSHOT"* ]]; then
     echo "  nightly build from https://build.geoserver.org/geoserver/$BRANCH"
     echo
