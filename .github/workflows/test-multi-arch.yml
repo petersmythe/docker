@@ -24,7 +24,8 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Run release script (publish)
+        working-directory: build
         env:
           PLATFORMS: linux/amd64,linux/arm64
         run: |
-          bash build/release.sh publish 2.28.1
+          bash release.sh publish 2.28.1
