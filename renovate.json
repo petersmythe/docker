@@ -2,5 +2,20 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "config:best-practices"
+  ],
+  "packageRules": [
+    {
+      "matchManagers": [
+        "github-actions"
+      ],
+      "pinDigests": false,
+      "rangeStrategy": "replace"
+    },
+    {
+      "matchFileNames": [
+        "docker-compose-demo.yml"
+      ],
+      "pinDigests": false
+    }
   ]
 }

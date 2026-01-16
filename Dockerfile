@@ -1,10 +1,12 @@
-ARG BUILDER_BASE_IMAGE=eclipse-temurin:17.0.16_8-jdk-noble@sha256:5c26ae538da6a39ab005a33cb6c5ab65db9d38fe47feb889330c71b6c7b5fe05
-ARG GEOSERVER_BASE_IMAGE=tomcat:9.0.109-jdk17-temurin-noble@sha256:c6b124e2954493034278dd14c87b4c3184f107af67ba2d47bbfca6924790c4ce
+ARG BUILDER_BASE_IMAGE=eclipse-temurin:17.0.17_10-jdk-noble@sha256:37823ac22e65c6248a897229583835089aa06337ba4477a2878533655333f44d
 
-ARG GS_VERSION=2.27.2
+# For GeoServer 3.0.0 tomcat:11.0-jdk21-temurin-noble required
+ARG GEOSERVER_BASE_IMAGE=tomcat:9.0.113-jdk17-temurin-noble@sha256:55a60662245e02cfbf2ad5662eab69f824681a50eb3a9088aca469fa10452f94
+
+ARG GS_VERSION=2.28.1
 ARG BUILD_GDAL=false
-ARG PROJ_VERSION=9.7.0
-ARG GDAL_VERSION=3.11.4
+ARG PROJ_VERSION=9.7.1
+ARG GDAL_VERSION=3.12.1
 ARG INSTALL_PREFIX=/usr/local
 
 # This is a multi stage build.
@@ -40,9 +42,9 @@ RUN mkdir -p /build_projgrids/usr/ \
     mkdir -p /build_gdal_python/usr/ \
     mkdir -p /build_gdal_version_changing/usr/ \
     && if test "${BUILD_GDAL}" = "true"; then \
-        apt update -y \
-        && apt upgrade -y \
-        && DEBIAN_FRONTEND=noninteractive apt install -y --fix-missing --no-install-recommends \
+        apt-get update -y \
+        && apt-get upgrade -y \
+        && DEBIAN_FRONTEND=noninteractive apt-get install -y --fix-missing --no-install-recommends \
             # PROJ build dependencies
             build-essential ca-certificates \
             git make ninja-build cmake wget unzip libtool automake \
@@ -157,19 +159,16 @@ LABEL vendor="osgeo.org"
 # Build arguments
 ARG ADDITIONAL_FONTS_PATH=./additional_fonts/
 ARG ADDITIONAL_LIBS_PATH=./additional_libs/
+ARG WAR_PATH=./geoserver/
 ARG BUILD_GDAL
 ARG COMMUNITY_PLUGIN_URL=''
-ARG CORS_ALLOWED_HEADERS=Origin,Accept,X-Requested-With,Content-Type,Access-Control-Request-Method,Access-Control-Request-Headers
-ARG CORS_ALLOWED_METHODS=GET,POST,PUT,DELETE,HEAD,OPTIONS
-ARG CORS_ALLOWED_ORIGINS=*
-ARG CORS_ALLOW_CREDENTIALS=false
-ARG CORS_ENABLED=false
 ARG GS_VERSION
 ARG GS_BUILD=release
 ARG GS_DATA_PATH=./geoserver_data/
 ARG INSTALL_PREFIX
 ARG STABLE_PLUGIN_URL=https://downloads.sourceforge.net/project/geoserver/GeoServer/${GS_VERSION}/extensions
 ARG WAR_ZIP_URL=https://downloads.sourceforge.net/project/geoserver/GeoServer/${GS_VERSION}/geoserver-${GS_VERSION}-war.zip
+ARG WAR_ZIP_FILE=geoserver-${GS_VERSION}-war.zip
 
 # Environment variables
 ENV ADDITIONAL_FONTS_DIR=/opt/additional_fonts/
@@ -179,11 +178,12 @@ ENV COMMUNITY_EXTENSIONS=''
 ENV COMMUNITY_PLUGIN_URL=$COMMUNITY_PLUGIN_URL
 ENV CONFIG_DIR=/opt/config
 ENV CONFIG_OVERRIDES_DIR=/opt/config_overrides
-ENV CORS_ALLOWED_HEADERS=$CORS_ALLOWED_HEADERS
-ENV CORS_ALLOWED_METHODS=$CORS_ALLOWED_METHODS
-ENV CORS_ALLOWED_ORIGINS=$CORS_ALLOWED_ORIGINS
-ENV CORS_ALLOW_CREDENTIALS=$CORS_ALLOW_CREDENTIALS
-ENV CORS_ENABLED=$CORS_ENABLED
+ENV CORS_ALLOWED_HEADERS=Origin,Accept,X-Requested-With,Content-Type,Access-Control-Request-Method,Access-Control-Request-Headers
+ENV CORS_ALLOWED_METHODS=GET,POST,PUT,DELETE,HEAD,OPTIONS
+ENV CORS_ALLOWED_ORIGINS=*
+ENV CORS_ALLOW_CREDENTIALS=false
+ENV CORS_ENABLED=false
+ENV JSONP_ENABLED=false
 ENV EXTRA_JAVA_OPTS="-Xms256m -Xmx1g"
 ENV GEOSERVER_BUILD=$GS_BUILD
 ENV GEOSERVER_DATA_DIR=/opt/geoserver_data/
@@ -194,15 +194,22 @@ ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 ENV HEALTHCHECK_URL=''
 ENV INSTALL_EXTENSIONS=false
 ENV POSTGRES_JNDI_ENABLED=false
+ENV POSTGRES_JNDI_RESOURCE_NAME=jdbc/postgres
+ENV POSTGRES_HOST=disabled
+ENV POSTGRES_PORT=5432
+ENV POSTGRES_DB=disabled
+ENV POSTGRES_USERNAME=disabled
+ENV POSTGRES_PASSWORD=disabled
 ENV ROOT_WEBAPP_REDIRECT=false
 ENV RUN_UNPRIVILEGED=false
 ENV RUN_WITH_USER_UID=
 ENV RUN_WITH_USER_GID=
-ENV CHANGE_OWNERSHIP_ON_FOLDERS="/opt $GEOSERVER_DATA_DIR"
+ENV CHANGE_OWNERSHIP_ON_FOLDERS="/opt $GEOSERVER_DATA_DIR $CATALINA_HOME/conf"
 ENV SKIP_DEMO_DATA=false
 ENV STABLE_EXTENSIONS=''
 ENV STABLE_PLUGIN_URL=$STABLE_PLUGIN_URL
 ENV WAR_ZIP_URL=$WAR_ZIP_URL
+ENV WAR_ZIP_FILE=$WAR_ZIP_FILE
 ENV WEBAPP_CONTEXT=geoserver
 
 # see https://docs.geoserver.org/stable/en/user/production/container.html
@@ -225,7 +232,7 @@ ENV CATALINA_OPTS="\$EXTRA_JAVA_OPTS \
     -Dfile.encoding=UTF-8 \
     -Djavax.servlet.request.encoding=UTF-8 \
     -Djavax.servlet.response.encoding=UTF-8 \
-    -D-XX:SoftRefLRUPolicyMSPerMB=36000 \
+    -XX:SoftRefLRUPolicyMSPerMB=36000 \
     -Xbootclasspath/a:$CATALINA_HOME/lib/marlin.jar \
     -Dsun.java2d.renderer=sun.java2d.marlin.DMarlinRenderingEngine \
     -Dorg.geotools.coverage.jaiext.enabled=true"
@@ -235,20 +242,20 @@ WORKDIR /tmp
 # Install dependencies
 RUN set -eux \
     && export DEBIAN_FRONTEND=noninteractive \
-    && apt update -y \
-    && apt upgrade -y \
-    && apt install -y --no-install-recommends \
+    && apt-get update -y \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
     # Basic dependencies
-    openssl curl unzip zip locales gettext gosu \
+    openssl curl unzip zip locales gettext \
     && if test "${BUILD_GDAL}" = "true"; then \
         # PROJ dependencies
-        apt install -y --no-install-recommends libsqlite3-0 libtiff6 libcurl4 ca-certificates \
+        apt-get install -y --no-install-recommends libsqlite3-0 libtiff6 libcurl4 ca-certificates \
         # GDAL dependencies
         bash-completion python3-numpy libpython3.12t64 libjpeg-turbo8 libgeos3.12.1t64 libgeos-c1v5 \
             libexpat1 libxerces-c3.2 libwebp7 libpng16-16 libdeflate0 libzstd1 bash libpq5 libssl3 \
             libopenjp2-7 libspatialite8t64 libmuparser2v5 python-is-python3; \
     fi \
-    && apt clean \
+    && apt-get clean \
     && rm -rf /var/cache/apt/* \
     && rm -rf /var/lib/apt/lists/*
 
@@ -273,10 +280,16 @@ RUN if test "${BUILD_GDAL}" = "true"; then \
         echo "source /usr/share/bash-completion/bash_completion" >> /root/.bashrc; \
     fi
 
+# Copy geoserver.zip if staged by release.sh
+COPY $WAR_PATH /tmp/
+RUN set -ux \
+    && mv /tmp/$WAR_ZIP_FILE /tmp/geoserver.zip 2>/dev/null || true \
+    && ls /tmp/geoserver.zip || true
+
 # Download geoserver
 RUN set -eux \
     && echo "Downloading GeoServer ${GS_VERSION} ${GS_BUILD}" \
-    && wget -q -O /tmp/geoserver.zip $WAR_ZIP_URL \
+    && if [ -f "/tmp/geoserver.zip" ]; then echo "Using provided /tmp/geoserver.zip"; else wget -q -O /tmp/geoserver.zip $WAR_ZIP_URL; fi \
     && unzip geoserver.zip geoserver.war -d /tmp/ \
     && unzip -q /tmp/geoserver.war -d /tmp/geoserver \
     && rm /tmp/geoserver.war \
@@ -312,9 +325,9 @@ COPY *.sh /opt/
 RUN find / -perm /6000 -type f -exec chmod a-s {} \; || true
 
 # cleanup
-RUN apt purge -y  \
-  && apt autoremove --purge -y \
-  && rm -rf /tmp/ \
+RUN apt-get purge -y  \
+  && apt-get autoremove --purge -y \
+  && rm -rf /tmp/* \
   && rm -rf $CATALINA_HOME/webapps/ROOT \
   && rm -rf $CATALINA_HOME/webapps/docs \
   && rm -rf $CATALINA_HOME/webapps/examples \

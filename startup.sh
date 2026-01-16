@@ -8,8 +8,8 @@ function copy_custom_config() {
   if [ -d "${CONFIG_OVERRIDES_DIR}" ] && [ -f "${CONFIG_OVERRIDES_DIR}/${CONFIG_FILE}" ]; then
     echo "Installing configuration override for ${CONFIG_FILE} with substituted environment variables"
     envsubst < "${CONFIG_OVERRIDES_DIR}"/"${CONFIG_FILE}" > "${CATALINA_HOME}/conf/${CONFIG_FILE}"
-  else
-    # Otherwise use the default
+  elif [ -f "${CONFIG_DIR}/${CONFIG_FILE}" ]; then
+    # Otherwise use the default if it exists
     echo "Installing default ${CONFIG_FILE} with substituted environment variables"
     envsubst < "${CONFIG_DIR}"/"${CONFIG_FILE}" > "${CATALINA_HOME}/conf/${CONFIG_FILE}"
 
@@ -93,10 +93,29 @@ fi
 
 # copy additional fonts before starting the tomcat
 # we also count whether at least one file with the fonts exists
-count=`ls -1 $ADDITIONAL_FONTS_DIR/*.ttf 2>/dev/null | wc -l`
-if [ -d "$ADDITIONAL_FONTS_DIR" ] && [ $count != 0 ]; then
-    cp $ADDITIONAL_FONTS_DIR/*.ttf /usr/share/fonts/truetype/
-    echo "Installed $count TTF font file(s) from the additional fonts folder"
+ttf_count=$(ls -1 "$ADDITIONAL_FONTS_DIR"/*.ttf 2>/dev/null | wc -l)
+ttc_count=$(ls -1 "$ADDITIONAL_FONTS_DIR"/*.ttc 2>/dev/null | wc -l)
+total_count=$((ttf_count + ttc_count))
+if [ -d "$ADDITIONAL_FONTS_DIR" ] && [ $total_count != 0 ]; then
+    [ "$ttf_count" -gt 0 ] && cp "$ADDITIONAL_FONTS_DIR"/*.ttf /usr/share/fonts/truetype/
+    [ "$ttc_count" -gt 0 ] && cp "$ADDITIONAL_FONTS_DIR"/*.ttc /usr/share/fonts/truetype/
+    
+    echo "Installed $total_count ttf/ttc font file(s) from the additional fonts folder"
+fi
+
+# if JSONP_ENABLED enabled, this will add the the context param to the end of the web.xml
+# (this will only happen if the context param has not yet been added before)
+if [ "${JSONP_ENABLED}" = "true" ]; then
+  if ! grep -q JsonpEnabledByStartupScript "$CATALINA_HOME/webapps/geoserver/WEB-INF/web.xml"; then
+    echo "Enable JSONP for $CATALINA_HOME/webapps/geoserver/WEB-INF/web.xml"
+
+    sed -i "\:</web-app>:i\\
+    <!-- JsonpEnabledByStartupScript -->\n\
+    <context-param>\n\
+      <param-name>ENABLE_JSONP</param-name>\n\
+      <param-value>true</param-value>\n\
+    </context-param>\n" "$CATALINA_HOME/webapps/geoserver/WEB-INF/web.xml";
+  fi
 fi
 
 # configure CORS (inspired by https://github.com/oscarfonts/docker-geoserver)
@@ -143,15 +162,6 @@ if [ "${CORS_ENABLED}" = "true" ]; then
 fi
 
 if [ "${POSTGRES_JNDI_ENABLED}" = "true" ]; then
-
-  # Set up some default values
-  if [ -z "${POSTGRES_JNDI_RESOURCE_NAME}" ]; then
-    export POSTGRES_JNDI_RESOURCE_NAME="jdbc/postgres"
-  fi
-  if [ -z "${POSTGRES_PORT}" ]; then
-    export POSTGRES_PORT="5432"
-  fi
-
   # Use a custom "context.xml" if the user mounted one into the container
   copy_custom_config "context.xml"
 fi
@@ -162,6 +172,10 @@ copy_custom_config "server.xml"
 # Use a custom "web.xml" if the user mounted one into the container
 if [ -d "${CONFIG_OVERRIDES_DIR}" ] && [ -f "${CONFIG_OVERRIDES_DIR}/web.xml" ]; then
   echo "Installing configuration override for web.xml with substituted environment variables"
+
+  if [ "${JSONP_ENABLED}" = "true" ]; then
+    echo "Warning: the JSONP_ENABLED's changes will be overwritten!"
+  fi
 
   if [ "${CORS_ENABLED}" = "true" ]; then
     echo "Warning: the CORS_ENABLED's changes will be overwritten!"
@@ -189,29 +203,53 @@ if [ ! "${ENABLE_DEFAULT_SHUTDOWN}" = "true" ]; then
   REPLACEMENT=
 fi
 
-if [ -n "$GEOSERVER_ADMIN_PASSWORD" ] && [ -n "$GEOSERVER_ADMIN_USER" ]; then
-    /bin/sh /opt/update_credentials.sh
-fi
+# Handle GeoServer admin credentials
+/opt/handle_geoserver_admin_credentials.sh
 
 # Run as non-privileged user
 if [ "${RUN_UNPRIVILEGED}" = "true" ]
 then
-  echo "The server will be run as non-privileged user 'tomcat'"
+  echo "The server will be run as non-privileged user"
 
   RUN_WITH_USER_UID=${RUN_WITH_USER_UID:=999}
-  RUN_WITH_USER_GID=${RUN_WITH_USER_GID:=${RUN_WITH_USER_UID} }
+  RUN_WITH_USER_GID=${RUN_WITH_USER_GID:=${RUN_WITH_USER_UID}}
 
-  echo "creating user tomcat (${RUN_WITH_USER_UID}:${RUN_WITH_USER_GID})"
-  addgroup --gid ${RUN_WITH_USER_GID} tomcat && \
-    adduser --system -u ${RUN_WITH_USER_UID} --gid ${RUN_WITH_USER_GID} \
-            --no-create-home tomcat
+  echo "Setting up user with UID/GID (${RUN_WITH_USER_UID}:${RUN_WITH_USER_GID})"
 
-  if [ -n "$CHANGE_OWNERSHIP_ON_FOLDERS" ]; then
-    echo "Changing ownership accordingly ($CHANGE_OWNERSHIP_ON_FOLDERS)"
-    chown -R tomcat:tomcat $CHANGE_OWNERSHIP_ON_FOLDERS
+  # Handle group setup
+  if getent group ${RUN_WITH_USER_GID} >/dev/null 2>&1; then
+    GROUP_NAME=$(getent group ${RUN_WITH_USER_GID} | cut -d: -f1)
+    echo "Using existing group: ${GROUP_NAME} (${RUN_WITH_USER_GID})"
+  else
+    GROUP_NAME="tomcat"
+    addgroup --gid ${RUN_WITH_USER_GID} ${GROUP_NAME}
+    echo "Created new group: ${GROUP_NAME} (${RUN_WITH_USER_GID})"
   fi
 
-  exec gosu tomcat $CATALINA_HOME/bin/catalina.sh run -Dorg.apache.catalina.connector.RECYCLE_FACADES=true
+  # Handle user setup - use existing user if available
+  if getent passwd ${RUN_WITH_USER_UID} >/dev/null 2>&1; then
+    USER_NAME=$(getent passwd ${RUN_WITH_USER_UID} | cut -d: -f1)
+    echo "Using existing user: ${USER_NAME} (${RUN_WITH_USER_UID})"
+
+    # Ensure user is in the correct group
+    usermod -g ${RUN_WITH_USER_GID} ${USER_NAME} 2>/dev/null || {
+      echo "Warning: Could not change primary group for user ${USER_NAME}"
+    }
+  else
+    USER_NAME="tomcat"
+    adduser --system -u ${RUN_WITH_USER_UID} --gid ${RUN_WITH_USER_GID} \
+            --no-create-home ${USER_NAME}
+    echo "Created user: ${USER_NAME} (${RUN_WITH_USER_UID}:${RUN_WITH_USER_GID})"
+  fi
+
+  if [ -n "$CHANGE_OWNERSHIP_ON_FOLDERS" ]; then
+    echo "Changing ownership to ${USER_NAME}:${GROUP_NAME} for: $CHANGE_OWNERSHIP_ON_FOLDERS"
+    chown -R ${USER_NAME}:${GROUP_NAME} $CHANGE_OWNERSHIP_ON_FOLDERS
+  fi
+
+  echo "Starting GeoServer as user: ${USER_NAME} (${RUN_WITH_USER_UID}:${RUN_WITH_USER_GID})"
+  exec setpriv --reuid $RUN_WITH_USER_UID --regid $RUN_WITH_USER_GID --init-groups \
+    $CATALINA_HOME/bin/catalina.sh run -Dorg.apache.catalina.connector.RECYCLE_FACADES=true
 else
   exec $CATALINA_HOME/bin/catalina.sh run -Dorg.apache.catalina.connector.RECYCLE_FACADES=true
 fi
