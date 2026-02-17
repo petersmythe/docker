@@ -30,6 +30,18 @@ ARG INSTALL_PREFIX
 ENV HOME="/root"
 USER root
 
+
+# Fix APT sources for Debian buster (moved to archive)
+RUN set -eux; \
+    sed -i 's|http://deb.debian.org/debian|http://archive.debian.org/debian|g' /etc/apt/sources.list; \
+    sed -i 's|http://security.debian.org/debian-security|http://archive.debian.org/debian-security|g' /etc/apt/sources.list; \
+    # buster-updates is not maintained on archive mirrors; remove if present
+    sed -i '/buster-updates/d' /etc/apt/sources.list; \
+    # archived repos often have expired metadata dates; relax validity check
+    printf 'Acquire::Check-Valid-Until "false";\n' > /etc/apt/apt.conf.d/99no-check-valid; \
+    apt-get update -y
+	
+
 # Setup build env for PROJ and GDAL
 RUN mkdir -p /build_projgrids/usr/ \
     mkdir -p /build${INSTALL_PREFIX}/share/proj/ \
@@ -243,7 +255,6 @@ WORKDIR /tmp
 RUN set -eux \
     && export DEBIAN_FRONTEND=noninteractive \
     && apt-get update -y \
-    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends \
     # Basic dependencies
     openssl curl unzip zip locales gettext \
