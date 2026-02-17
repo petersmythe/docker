@@ -251,6 +251,17 @@ ENV CATALINA_OPTS="\$EXTRA_JAVA_OPTS \
 
 WORKDIR /tmp
 
+# --- Fix APT sources for Debian buster inside the geoserver stage ---
+RUN set -eux; \
+    if grep -q 'buster' /etc/os-release 2>/dev/null || grep -q 'buster' /etc/apt/sources.list 2>/dev/null; then \
+      sed -i 's|http://deb.debian.org/debian|http://archive.debian.org/debian|g' /etc/apt/sources.list; \
+      sed -i 's|http://security.debian.org/debian-security|http://archive.debian.org/debian-security|g' /etc/apt/sources.list; \
+      sed -i '/buster-updates/d' /etc/apt/sources.list; \
+      printf 'Acquire::Check-Valid-Until "false";\n' > /etc/apt/apt.conf.d/99no-check-valid; \
+    fi; \
+    apt-get update -y
+
+
 # Install dependencies
 RUN set -eux \
     && export DEBIAN_FRONTEND=noninteractive \
