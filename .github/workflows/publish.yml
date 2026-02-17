@@ -126,7 +126,7 @@ jobs:
           elif [[ "$VERSION" == "2.27"* ]] || [[ "$VERSION" == "2.26"* ]]; then
             BASE_IMAGE="tomcat:9.0-jdk17-temurin-noble"
           elif [[ "$VERSION" == "2.8."* ]]; then        # Testing an ancient version
-            BASE_IMAGE="tomcat:8.5.69-jdk8-openjdk"
+            BASE_IMAGE="tomcat:8.5.82-jdk8-openjdk-bullseye"
           else
             BASE_IMAGE="tomcat:9.0-jdk11-temurin-noble"
           fi
