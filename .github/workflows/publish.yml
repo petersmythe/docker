@@ -254,19 +254,19 @@ jobs:
             runner: ubuntu-latest
             arch: amd64
             gdal: false
-          - platform: linux/amd64
-            runner: ubuntu-latest
-            arch: amd64
-            gdal: true
-          # ARM64 builds
-          - platform: linux/arm64
-            runner: ubuntu-24.04-arm
-            arch: arm64
-            gdal: false
-          - platform: linux/arm64
-            runner: ubuntu-24.04-arm
-            arch: arm64
-            gdal: true
+#          - platform: linux/amd64
+#            runner: ubuntu-latest
+#            arch: amd64
+#            gdal: true
+#          # ARM64 builds
+#          - platform: linux/arm64
+#            runner: ubuntu-24.04-arm
+#            arch: arm64
+#            gdal: false
+#          - platform: linux/arm64
+#            runner: ubuntu-24.04-arm
+#            arch: arm64
+#            gdal: true
     
     steps:
       - name: Checkout repository
@@ -390,6 +390,7 @@ jobs:
           echo "Created manifest for tags: $TAGS"
       
       - name: Create manifest list and push (with GDAL)
+        if: false
         working-directory: /tmp/digests-gdal
         run: |
           set -euo pipefail
